@@ -119,6 +119,19 @@ git add .
 git remote -v
 ~~~
 
+如果地址以 `http://github.com/` 开头，建议改为 HTTPS，避免每次拉取都发生重定向：
+
+~~~bash
+git remote set-url origin https://github.com/用户名/仓库名.git
+git remote -v
+~~~
+
+例如本项目的远程地址：
+
+~~~bash
+git remote set-url origin https://github.com/fengjielab/-ros-.git
+~~~
+
 查看当前分支：
 
 ~~~bash
@@ -128,14 +141,48 @@ git branch
 切换分支：
 
 ~~~bash
-git switch 分支名
+git checkout 分支名
 ~~~
 
 创建并切换到新分支：
 
 ~~~bash
-git switch -c 新分支名
+git checkout -b 新分支名
 ~~~
+
+`git switch` 是较新 Git 版本提供的写法；Nano 上如果提示 `git: 'switch' is not a git command`，请使用上面的 `git checkout`。
+
+### 在 Nano 上切换到远程已有的支线并拉取代码
+
+先进入 Git 仓库目录，并确认当前没有未提交的修改：
+
+~~~bash
+cd ~/项目目录
+git status
+~~~
+
+如果看到 `nothing to commit, working tree clean`，就可以安全切换分支。先从 GitHub 获取最新分支信息并查看所有分支：
+
+~~~bash
+git fetch origin
+git branch -a
+~~~
+
+假设要切换的远程支线是 `origin/esp32`，第一次切换时执行：
+
+~~~bash
+git checkout -b esp32 origin/esp32
+git pull --ff-only
+~~~
+
+这会在 Nano 创建本地 `esp32` 分支，并将它关联到远程 `origin/esp32`。以后再更新这个支线，只需执行：
+
+~~~bash
+git checkout esp32
+git pull --ff-only
+~~~
+
+把 `esp32` 替换为实际分支名。不要停留在 `main` 分支执行 `git pull`，否则拉取的仍然是主分支的代码。
 
 查看最近一次提交修改了哪些文件：
 
@@ -216,3 +263,21 @@ git status
 
 使用 HTTPS 时，GitHub 通常需要 Personal Access Token，而不是 GitHub 登录密码。也可以配置 SSH 密钥，减少重复认证。
 
+### git pull 出现 502 错误怎么办？
+
+例如：
+
+~~~text
+fatal: unable to access 'http://github.com/用户名/仓库名.git/': The requested URL returned error: 502
+~~~
+
+`502` 通常表示网络、代理或 GitHub 网关临时异常，不是本地代码或分支错误。先检查并将远程地址改为 HTTPS：
+
+~~~bash
+git remote -v
+git remote set-url origin https://github.com/用户名/仓库名.git
+git fetch origin
+git pull --ff-only
+~~~
+
+如果仍提示 `502`，等待一两分钟后重新执行 `git fetch origin` 和 `git pull --ff-only`。

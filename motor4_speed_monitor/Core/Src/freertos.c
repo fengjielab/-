@@ -56,6 +56,14 @@ static volatile uint8_t uart_last_cmd = 0;
 
 static volatile uint8_t uart_cmd_ready = 0;
 
+/* 调试阶段：将已处理的命令回传给 ESP32-C3，再由 Nano 显示。 */
+static void DebugAckCommand(uint8_t command)
+{
+    char ack[] = "STM32 ACK: X\r\n";
+    ack[11] = (char)command;
+    HAL_UART_Transmit(&huart1, (uint8_t *)ack, sizeof(ack) - 1, 10);
+}
+
 
 /* ==============================
  * 调试观察变量
@@ -162,6 +170,8 @@ void MX_FREERTOS_Init(void) {
 /* USER CODE END Header_StartDefaultTask */
 void StartDefaultTask(void *argument)
 {
+    uint8_t last_acked_cmd = 0;
+
     /* 开始等待USART1接收1个字节 */
     HAL_UART_Receive_IT(
         &huart1,
@@ -231,6 +241,13 @@ void StartDefaultTask(void *argument)
 
                 default:
                     break;
+            }
+
+            /* 命令已被 STM32 解析并执行；相同的保活命令只确认一次。 */
+            if (cmd != last_acked_cmd)
+            {
+                DebugAckCommand(cmd);
+                last_acked_cmd = cmd;
             }
         }
 

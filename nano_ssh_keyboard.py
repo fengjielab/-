@@ -15,6 +15,7 @@ import serial
 SERIAL_PORT = "/dev/ttyUSB0"
 BAUDRATE = 115200
 SEND_PERIOD = 0.05
+DEBUG_LINK = True
 
 KEY_MAP = {
     "w": "W",
@@ -28,6 +29,15 @@ KEY_MAP = {
 
 def send(ser, command):
     ser.write(command.encode("ascii"))
+
+
+def show_debug_messages(ser):
+    """显示 ESP32-C3/STM32 从串口回传的调试信息。"""
+    if not DEBUG_LINK or ser.in_waiting == 0:
+        return
+
+    message = ser.read(ser.in_waiting).decode("utf-8", "replace")
+    print(message, end="", flush=True)
 
 
 def main():
@@ -56,14 +66,22 @@ def main():
 
                 command = KEY_MAP.get(value.lower())
                 if command is not None:
-                    current_command = command
+                    if command != current_command:
+                        current_command = command
+                        if DEBUG_LINK:
+                            print(f"\nNano -> ESP32-C3: {current_command}")
                 elif value.lower() == "x":
-                    current_command = "X"
+                    if current_command != "X":
+                        current_command = "X"
+                        if DEBUG_LINK:
+                            print("\nNano -> ESP32-C3: X")
 
             now = time.monotonic()
             if now >= next_send:
                 send(ser, current_command)
                 next_send = now + SEND_PERIOD
+
+            show_debug_messages(ser)
 
     except KeyboardInterrupt:
         pass
