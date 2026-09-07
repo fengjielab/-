@@ -11,8 +11,8 @@ import time
 import serial
 
 
-# ESP32 接在 Nano 上的串口设备；先用 ls /dev/ttyUSB* /dev/ttyACM* 确认。
-SERIAL_PORT = "/dev/ttyUSB0"
+# ESP32-C3 通过原生 USB CDC 接在 Nano 上；/dev/ttyUSB0 是 STM32 的 CH340，不能使用。
+SERIAL_PORT = "/dev/ttyACM0"
 BAUDRATE = 115200
 SEND_PERIOD = 0.05
 DEBUG_LINK = True
