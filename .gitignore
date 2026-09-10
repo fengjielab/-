@@ -1,22 +1,10 @@
-# STM32CubeIDE build output
-.metadata/
-**/Debug/
-**/Release/
-**/build/
+# ROS/catkin generated build artifacts
+catkin_ws/build/
+catkin_ws/devel/
+catkin_ws/install/
+catkin_ws/log/
+catkin_ws/.catkin_tools/
 
-# Compiler output and analysis files
-*.o
-*.d
-*.elf
-*.map
-*.list
-*.hex
-*.bin
-*.su
-*.cyclo
-
-# IDE and operating system files
-.vscode/
-*.launch
-Thumbs.db
-.DS_Store
+# Python cache files
+__pycache__/
+*.py[cod]
