@@ -4,6 +4,10 @@
 **/Release/
 **/build/
 
+# STM32CubeIDE machine-local environment settings
+**/.settings/language.settings.xml
+**/.settings/stm32cubeide.project.prefs
+
 # Compiler output and analysis files
 *.o
 *.d
