@@ -41,6 +41,9 @@
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
+/* Equivalent to the previous 150 count/100 ms command, unit: m/s. */
+#define DEFAULT_WHEEL_SPEED_MPS  0.0169575f
+
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -183,42 +186,42 @@ void StartDefaultTask(void *argument)
                 /* 前进 */
                 case 'W':
                 case 'w':
-                    Robot_Forward(150);
+                    Robot_Forward(DEFAULT_WHEEL_SPEED_MPS);
                     break;
 
 
                 /* 后退 */
                 case 'S':
                 case 's':
-                    Robot_Backward(150);
+                    Robot_Backward(DEFAULT_WHEEL_SPEED_MPS);
                     break;
 
 
                 /* 左移 */
                 case 'A':
                 case 'a':
-                    Robot_Left(150);
+                    Robot_Left(DEFAULT_WHEEL_SPEED_MPS);
                     break;
 
 
                 /* 右移 */
                 case 'D':
                 case 'd':
-                    Robot_Right(150);
+                    Robot_Right(DEFAULT_WHEEL_SPEED_MPS);
                     break;
 
 
                 /* 原地左转 */
                 case 'Q':
                 case 'q':
-                    Robot_TurnLeft(150);
+                    Robot_TurnLeft(DEFAULT_WHEEL_SPEED_MPS);
                     break;
 
 
                 /* 原地右转 */
                 case 'E':
                 case 'e':
-                    Robot_TurnRight(150);
+                    Robot_TurnRight(DEFAULT_WHEEL_SPEED_MPS);
                     break;
 
 
@@ -325,4 +328,3 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
     }
 }
 /* USER CODE END Application */
-

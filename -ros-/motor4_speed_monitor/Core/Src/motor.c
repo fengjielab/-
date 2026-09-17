@@ -18,6 +18,10 @@
 
 #define CONTROL_DT     0.1f
 
+/* Conversion from one count during the nominal 100 ms control window to m/s. */
+#define MOTOR_MPS_PER_CONTROL_COUNT \
+    (MOTOR_WHEEL_CIRCUMFERENCE_M / (MOTOR_ENCODER_CPR * CONTROL_DT))
+
 #define BASE_PWM       300
 
 #define PWM_MAX        700
@@ -73,7 +77,7 @@ volatile uint32_t debug_motor_dt_ms = 0;
  *
  * 我暂时写290作为示例。
  */
-static float motor_target[4] =
+static float motor_target_mps[4] =
 {
     0, 0, 0, 0
 };
@@ -91,10 +95,22 @@ typedef struct
 
 static PID_t motor_pid[4] =
 {
-    {6.0f, 1.0f, 0.01f, 0.0f, 0.0f},
-    {6.0f, 1.0f, 0.01f, 0.0f, 0.0f},
-    {6.0f, 1.0f, 0.01f, 0.0f, 0.0f},
-    {6.0f, 1.0f, 0.01f, 0.0f, 0.0f}
+    {6.0f / MOTOR_MPS_PER_CONTROL_COUNT,
+     1.0f / MOTOR_MPS_PER_CONTROL_COUNT,
+     0.01f / MOTOR_MPS_PER_CONTROL_COUNT,
+     0.0f, 0.0f},
+    {6.0f / MOTOR_MPS_PER_CONTROL_COUNT,
+     1.0f / MOTOR_MPS_PER_CONTROL_COUNT,
+     0.01f / MOTOR_MPS_PER_CONTROL_COUNT,
+     0.0f, 0.0f},
+    {6.0f / MOTOR_MPS_PER_CONTROL_COUNT,
+     1.0f / MOTOR_MPS_PER_CONTROL_COUNT,
+     0.01f / MOTOR_MPS_PER_CONTROL_COUNT,
+     0.0f, 0.0f},
+    {6.0f / MOTOR_MPS_PER_CONTROL_COUNT,
+     1.0f / MOTOR_MPS_PER_CONTROL_COUNT,
+     0.01f / MOTOR_MPS_PER_CONTROL_COUNT,
+     0.0f, 0.0f}
 };
 
 static int16_t motor_count[4] =
@@ -552,10 +568,10 @@ debug_motor_count[1] = motor_count[1];
 debug_motor_count[2] = motor_count[2];
 debug_motor_count[3] = motor_count[3];
 
-debug_motor_target[0] = motor_target[0];
-debug_motor_target[1] = motor_target[1];
-debug_motor_target[2] = motor_target[2];
-debug_motor_target[3] = motor_target[3];
+debug_motor_target[0] = motor_target_mps[0];
+debug_motor_target[1] = motor_target_mps[1];
+debug_motor_target[2] = motor_target_mps[2];
+debug_motor_target[3] = motor_target_mps[3];
 
     /* ==========================
      * 为下一个100ms重新计数
@@ -574,7 +590,7 @@ debug_motor_target[3] = motor_target[3];
         float actual_abs;
 
 
-        target = motor_target[i];
+        target = motor_target_mps[i];
 
 
         /* =================================
@@ -619,7 +635,7 @@ debug_motor_target[3] = motor_target[3];
          * PID只比较速度大小
          * ================================= */
 
-        actual_abs = (float)motor_count[i];
+        actual_abs = motor_speed_mps[i];
 
         if (actual_abs < 0.0f)
         {
@@ -643,12 +659,17 @@ debug_motor_target[3] = motor_target[3];
 
 void Motor_SetTarget(uint8_t motor, float target)
 {
+    Motor_SetTargetMps(motor, target);
+}
+
+void Motor_SetTargetMps(uint8_t motor, float target_mps)
+{
     if (motor < 1 || motor > 4)
     {
         return;
     }
 
-    motor_target[motor - 1] = target;
+    motor_target_mps[motor - 1] = target_mps;
 }
 
 float Motor_GetTarget(uint8_t motor)
@@ -658,7 +679,7 @@ float Motor_GetTarget(uint8_t motor)
         return 0.0f;
     }
 
-    return motor_target[motor - 1];
+    return motor_target_mps[motor - 1];
 }
 
 int16_t Motor_GetCount(uint8_t motor)
@@ -695,7 +716,7 @@ void Motor_StopAll(void)
 {
     for (int i = 0; i < 4; i++)
     {
-        motor_target[i] = 0.0f;
+        motor_target_mps[i] = 0.0f;
 
         motor_pwm[i] = 0;
 

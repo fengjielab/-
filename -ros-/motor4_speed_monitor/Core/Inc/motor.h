@@ -34,7 +34,7 @@ void Motor_ControlStep(void);
 
 
 /* ==============================
- * 修改四个电机的目标count
+ * 修改单个电机的目标轮速，单位：m/s
  * ============================== */
 void Motor_SetTarget(uint8_t motor, float target);
 
@@ -43,11 +43,11 @@ void Motor_SetTargetMps(uint8_t motor, float target_mps);
 
 /* 获取实际轮速，单位：m/s */
 float Motor_GetSpeedMps(uint8_t motor);
-/* 获取目标count */
+/* 获取目标轮速，单位：m/s */
 
 float Motor_GetTarget(uint8_t motor);
 
-/* 获取某个电机本周期count */
+/* 获取某个电机本周期编码器增量 */
 int16_t Motor_GetCount(uint8_t motor);
 
 

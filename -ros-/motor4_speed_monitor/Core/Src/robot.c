@@ -23,10 +23,10 @@ void Robot_SetVelocity(float vx,
     m3 = vx - vy - wz;
     m4 = vx + vy + wz;
 
-    Motor_SetTarget(1, m1);
-    Motor_SetTarget(2, m2);
-    Motor_SetTarget(3, m3);
-    Motor_SetTarget(4, m4);
+    Motor_SetTargetMps(1, m1);
+    Motor_SetTargetMps(2, m2);
+    Motor_SetTargetMps(3, m3);
+    Motor_SetTargetMps(4, m4);
 }
 
 void Robot_Forward(float speed)
