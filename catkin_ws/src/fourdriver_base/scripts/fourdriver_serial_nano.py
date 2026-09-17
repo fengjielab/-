@@ -12,6 +12,28 @@ class FourdriverSerialNode(object):
         port = rospy.get_param('~port', '/dev/ttyUSB0')
         baud = rospy.get_param('~baud', 115200)
 
+        self.wheel_center_x = rospy.get_param(
+            '~wheel_center_x',
+            0.10
+        )
+        self.wheel_center_y = rospy.get_param(
+            '~wheel_center_y',
+            0.1225
+        )
+        self.command_rate = rospy.get_param(
+            '~command_rate',
+            20.0
+        )
+        self.command_timeout = rospy.get_param(
+            '~command_timeout',
+            0.5
+        )
+
+        self.vx = 0.0
+        self.vy = 0.0
+        self.wz = 0.0
+        self.last_cmd_time = rospy.Time.now()
+
         self.ser = serial.Serial(
             port=port,
             baudrate=baud,
@@ -20,7 +42,7 @@ class FourdriverSerialNode(object):
 
         rospy.on_shutdown(self.shutdown)
 
-        self.ser.write(b'X')
+        self.send_wheel_speeds(0.0, 0.0, 0.0, 0.0)
 
         self.sub = rospy.Subscriber(
             '/cmd_vel',
@@ -29,40 +51,68 @@ class FourdriverSerialNode(object):
             queue_size=1
         )
 
+        self.timer = rospy.Timer(
+            rospy.Duration(1.0 / self.command_rate),
+            self.timer_callback
+        )
+
         rospy.loginfo('Serial connected: %s at %d baud', port, baud)
         rospy.loginfo('Subscribed to /cmd_vel')
+        rospy.loginfo(
+            'Wheel geometry: Lx=%.4f m, Ly=%.4f m, command rate=%.1f Hz',
+            self.wheel_center_x,
+            self.wheel_center_y,
+            self.command_rate
+        )
 
-    def send_command(self, command):
-        self.ser.write(command.encode('ascii'))
+    def send_wheel_speeds(self, m1, m2, m3, m4):
+        frame = 'V,%.5f,%.5f,%.5f,%.5f\n' % (
+            m1,
+            m2,
+            m3,
+            m4
+        )
+
+        self.ser.write(frame.encode('ascii'))
         rospy.loginfo_throttle(
             1.0,
-            'Sent command: %s' % command
+            'Sent wheel speeds: %s' % frame.rstrip()
         )
 
     def cmd_vel_callback(self, msg):
-        vx = msg.linear.x
-        vy = msg.linear.y
-        wz = msg.angular.z
+        self.vx = msg.linear.x
+        self.vy = msg.linear.y
+        self.wz = msg.angular.z
+        self.last_cmd_time = rospy.Time.now()
 
-        threshold = 0.01
+    def timer_callback(self, _event):
+        now = rospy.Time.now()
+        command_age = (now - self.last_cmd_time).to_sec()
 
-        if abs(vx) < threshold and abs(vy) < threshold and abs(wz) < threshold:
-            command = 'X'
-
-        elif abs(vx) >= abs(vy) and abs(vx) >= abs(wz):
-            command = 'W' if vx > 0 else 'S'
-
-        elif abs(vy) >= abs(wz):
-            command = 'A' if vy > 0 else 'D'
-
+        if command_age > self.command_timeout:
+            vx = 0.0
+            vy = 0.0
+            wz = 0.0
         else:
-            command = 'Q' if wz > 0 else 'E'
+            vx = self.vx
+            vy = self.vy
+            wz = self.wz
 
-        self.send_command(command)
+        rotation_term = (
+            self.wheel_center_x
+            + self.wheel_center_y
+        ) * wz
+
+        m1 = vx + vy - rotation_term
+        m2 = vx - vy + rotation_term
+        m3 = vx - vy - rotation_term
+        m4 = vx + vy + rotation_term
+
+        self.send_wheel_speeds(m1, m2, m3, m4)
 
     def shutdown(self):
         try:
-            self.ser.write(b'X')
+            self.send_wheel_speeds(0.0, 0.0, 0.0, 0.0)
             self.ser.close()
             rospy.loginfo('Sent stop command and closed serial port')
         except Exception:

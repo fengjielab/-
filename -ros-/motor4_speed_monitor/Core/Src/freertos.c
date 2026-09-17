@@ -30,6 +30,7 @@
 #include "motor.h"
 #include "usart.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include "robot.h"
 /* USER CODE END Includes */
 
@@ -40,7 +41,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
+#define UART_FRAME_BUFFER_SIZE  64U
 /* Equivalent to the previous 150 count/100 ms command, unit: m/s. */
 #define DEFAULT_WHEEL_SPEED_MPS  0.0169575f
 
@@ -59,7 +60,14 @@ static volatile uint8_t uart_last_cmd = 0;
 
 static volatile uint8_t uart_cmd_ready = 0;
 
+/* 串口协议帧缓冲区 */
+static volatile char uart_frame_buffer[UART_FRAME_BUFFER_SIZE];
 
+/* 当前正在接收的位置 */
+static volatile uint8_t uart_frame_index = 0;
+
+/* 是否已经收到完整的一帧 */
+static volatile uint8_t uart_frame_ready = 0;
 /* ==============================
  * 调试观察变量
  * ============================== */
@@ -107,6 +115,54 @@ const osThreadAttr_t uartTask_attributes = {
 void StartDefaultTask(void *argument);
 void StartMotorTask(void *argument);
 void StartUartTask(void *argument);
+
+static int ParseSpeedFrame(
+    const char *frame,
+    float speed[4])
+{
+    const char *p;
+    char *end;
+
+    p = frame;
+
+    if ((p[0] != 'V') || (p[1] != ','))
+    {
+        return 0;
+    }
+
+    p += 2;
+
+    for (int i = 0; i < 4; i++)
+    {
+        speed[i] = strtof(p, &end);
+
+        if (end == p)
+        {
+            return 0;
+        }
+
+        if (i < 3)
+        {
+            if (*end != ',')
+            {
+                return 0;
+            }
+
+            p = end + 1;
+        }
+        else
+        {
+            if ((*end != '\0')
+                && (*end != '\r')
+                && (*end != '\n'))
+            {
+                return 0;
+            }
+        }
+    }
+
+    return 1;
+}
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
@@ -174,6 +230,55 @@ void StartDefaultTask(void *argument)
 
     for (;;)
     {
+        /*
+         * 处理一帧四轮 m/s 速度数据
+         */
+        if (uart_frame_ready)
+        {
+            char frame_copy[UART_FRAME_BUFFER_SIZE];
+
+            float parsed_speed[4];
+            int parsed_ok;
+
+            /*
+             * 先复制数据，避免解析时被串口中断修改
+             */
+            for (int i = 0;
+                 i < UART_FRAME_BUFFER_SIZE;
+                 i++)
+            {
+                frame_copy[i] =
+                    uart_frame_buffer[i];
+
+                if (frame_copy[i] == '\0')
+                {
+                    break;
+                }
+            }
+
+            uart_frame_ready = 0U;
+
+            /*
+             * 解析：
+             * V,M1,M2,M3,M4
+             */
+            parsed_ok =
+                ParseSpeedFrame(
+                    frame_copy,
+                    parsed_speed
+                );
+
+            /*
+             * 必须成功解析出四个速度
+             */
+            if (parsed_ok)
+            {
+                Motor_SetTargetMps(1, parsed_speed[0]);
+                Motor_SetTargetMps(2, parsed_speed[1]);
+                Motor_SetTargetMps(3, parsed_speed[2]);
+                Motor_SetTargetMps(4, parsed_speed[3]);
+            }
+        }
         if (uart_cmd_ready)
         {
            debug_cmd_count++;
@@ -291,20 +396,120 @@ void HAL_UART_RxCpltCallback(
 {
     if (huart->Instance == USART1)
     {
-        /* 保存刚才收到的字符 */
-        uart_last_cmd = uart_rx_byte;
+        char received_byte;
 
-        /* 记录调试信息 */
-        debug_last_rx_cmd = uart_rx_byte;
+        received_byte =
+            (char)uart_rx_byte;
+
+        debug_last_rx_cmd =
+            uart_rx_byte;
+
         debug_rx_count++;
 
-        /* 告诉CommandTask有新命令 */
-        uart_cmd_ready = 1;
+        /*
+         * 一帧结束：
+         * V,0.01,0.01,0.01,0.01\n
+         */
+        if (received_byte == '\n')
+        {
+            if ((uart_frame_index > 0U)
+                && (uart_frame_ready == 0U))
+            {
+                uart_frame_buffer[uart_frame_index] =
+                    '\0';
 
+                uart_frame_ready = 1U;
+                uart_frame_index = 0U;
+            }
+        }
 
-        /* 非常重要：
-         * 接完一个字节以后，
-         * 马上继续等待下一个字节
+        /*
+         * 忽略 Windows 风格换行中的 \r
+         */
+        else if (received_byte == '\r')
+        {
+            /* 不处理 */
+        }
+
+        /*
+         * 兼容原来的单字节按键命令
+         */
+        else if (uart_frame_index == 0U)
+        {
+            switch (received_byte)
+            {
+                case 'W':
+                case 'w':
+                case 'S':
+                case 's':
+                case 'A':
+                case 'a':
+                case 'D':
+                case 'd':
+                case 'Q':
+                case 'q':
+                case 'E':
+                case 'e':
+                case 'X':
+                case 'x':
+
+                    uart_last_cmd =
+                        (uint8_t)received_byte;
+
+                    uart_cmd_ready = 1U;
+                    break;
+
+                default:
+
+                    if (uart_frame_ready == 0U)
+                    {
+                        if (uart_frame_index
+                            < (UART_FRAME_BUFFER_SIZE - 1U))
+                        {
+                            uart_frame_buffer[
+                                uart_frame_index
+                            ] = received_byte;
+
+                            uart_frame_index++;
+                        }
+                        else
+                        {
+                            /*
+                             * 缓冲区溢出，丢弃当前帧
+                             */
+                            uart_frame_index = 0U;
+                        }
+                    }
+
+                    break;
+            }
+        }
+
+        /*
+         * 正在接收 V,... 数字帧
+         */
+        else if (uart_frame_ready == 0U)
+        {
+            if (uart_frame_index
+                < (UART_FRAME_BUFFER_SIZE - 1U))
+            {
+                uart_frame_buffer[
+                    uart_frame_index
+                ] = received_byte;
+
+                uart_frame_index++;
+            }
+            else
+            {
+                /*
+                 * 缓冲区溢出，丢弃当前帧
+                 */
+                uart_frame_index = 0U;
+            }
+        }
+
+        /*
+         * 继续接收下一个字节
          */
         HAL_UART_Receive_IT(
             &huart1,
