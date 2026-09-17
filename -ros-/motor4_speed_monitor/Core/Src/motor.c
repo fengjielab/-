@@ -52,6 +52,21 @@ volatile uint16_t debug_motor_pwm[4] =
     0, 0, 0, 0
 };
 
+/* Current measured wheel speed, unit: m/s */
+volatile float debug_motor_speed_mps[4] =
+{
+    0.0f, 0.0f, 0.0f, 0.0f
+};
+
+/* Current encoder speed, unit: count/s */
+volatile float debug_motor_speed_cps[4] =
+{
+    0.0f, 0.0f, 0.0f, 0.0f
+};
+
+/* Actual time between two samples, unit: ms */
+volatile uint32_t debug_motor_dt_ms = 0;
+
 
 /*
  * 这里填写你现在已经调通的目标值
@@ -86,6 +101,21 @@ static int16_t motor_count[4] =
 {
     0, 0, 0, 0
 };
+
+/* Raw encoder counter from the previous sample */
+static uint16_t motor_previous_counter[4] =
+{
+    0, 0, 0, 0
+};
+
+/* Current measured wheel speed, unit: m/s */
+static float motor_speed_mps[4] =
+{
+    0.0f, 0.0f, 0.0f, 0.0f
+};
+
+/* System time of the previous sample */
+static uint32_t motor_last_sample_tick = 0;
 
 
 static uint16_t motor_pwm[4] =
@@ -350,6 +380,18 @@ static float PID_Update(PID_t *pid,
 
 void Motor_Init(void)
 {
+    motor_previous_counter[0] = 0;
+    motor_previous_counter[1] = 0;
+    motor_previous_counter[2] = 0;
+    motor_previous_counter[3] = 0;
+
+    motor_speed_mps[0] = 0.0f;
+    motor_speed_mps[1] = 0.0f;
+    motor_speed_mps[2] = 0.0f;
+    motor_speed_mps[3] = 0.0f;
+
+    motor_last_sample_tick = HAL_GetTick();
+
     /* ==========================
      * 启动4个编码器
      * ========================== */
@@ -370,13 +412,15 @@ void Motor_Init(void)
         &htim1,
         TIM_CHANNEL_ALL);
 
-
-    /* 清零 */
-
+    /* Clear counters after encoder peripherals are started. */
     __HAL_TIM_SET_COUNTER(&htim2, 0);
     __HAL_TIM_SET_COUNTER(&htim3, 0);
     __HAL_TIM_SET_COUNTER(&htim4, 0);
     __HAL_TIM_SET_COUNTER(&htim1, 0);
+
+
+    /* 清零 */
+
 
 
     /* ==========================
@@ -423,48 +467,84 @@ void Motor_Init(void)
 
 void Motor_ControlStep(void)
 {
-      debug_motor_step_count++;
-    int16_t c1;
-    int16_t c2;
-    int16_t c3;
-    int16_t c4;
+    uint16_t current_counter[4];
+    int16_t delta_counter[4];
+    uint32_t current_tick;
+    uint32_t elapsed_ms;
+    float dt_s;
+
+    debug_motor_step_count++;
+
+    current_tick = HAL_GetTick();
+    elapsed_ms = current_tick - motor_last_sample_tick;
+
+    /* Do not calculate twice at the same system tick. */
+    if (elapsed_ms == 0U)
+    {
+        return;
+    }
+
+    motor_last_sample_tick = current_tick;
+    debug_motor_dt_ms = elapsed_ms;
+    dt_s = (float)elapsed_ms / 1000.0f;
 
 
     /* ==========================
      * 读取四个编码器
      * ========================== */
 
-    c1 =
-        (int16_t)__HAL_TIM_GET_COUNTER(
-            &htim2);
+    /* Read continuously running encoder counters. */
+    current_counter[0] =
+        (uint16_t)__HAL_TIM_GET_COUNTER(&htim2);
 
-    c2 =
-        (int16_t)__HAL_TIM_GET_COUNTER(
-            &htim3);
+    current_counter[1] =
+        (uint16_t)__HAL_TIM_GET_COUNTER(&htim3);
 
-    c3 =
-        (int16_t)__HAL_TIM_GET_COUNTER(
-            &htim4);
+    current_counter[2] =
+        (uint16_t)__HAL_TIM_GET_COUNTER(&htim4);
 
-    c4 =
-        (int16_t)__HAL_TIM_GET_COUNTER(
-            &htim1);
+    current_counter[3] =
+        (uint16_t)__HAL_TIM_GET_COUNTER(&htim1);
+
+    /* Current counter - previous counter; handles one 16-bit wrap. */
+    for (int i = 0; i < 4; i++)
+    {
+        delta_counter[i] =
+            (int16_t)(
+                (uint16_t)(
+                    current_counter[i]
+                    - motor_previous_counter[i]
+                )
+            );
+
+        motor_previous_counter[i] = current_counter[i];
+    }
 
 
     /*
      * 当前阶段只比较速度大小
      */
 
-    c1 = M1_ENCODER_SIGN * c1;
-    c2 = M2_ENCODER_SIGN * c2;
-    c3 = M3_ENCODER_SIGN * c3;
-    c4 = M4_ENCODER_SIGN * c4;
+    motor_count[0] = M1_ENCODER_SIGN * delta_counter[0];
+    motor_count[1] = M2_ENCODER_SIGN * delta_counter[1];
+    motor_count[2] = M3_ENCODER_SIGN * delta_counter[2];
+    motor_count[3] = M4_ENCODER_SIGN * delta_counter[3];
 
+    /* Convert encoder delta to count/s and then to m/s. */
+    for (int i = 0; i < 4; i++)
+    {
+        debug_motor_count[i] = motor_count[i];
 
-    motor_count[0] = c1;
-    motor_count[1] = c2;
-    motor_count[2] = c3;
-    motor_count[3] = c4;
+        debug_motor_speed_cps[i] =
+            (float)motor_count[i] / dt_s;
+
+        motor_speed_mps[i] =
+            debug_motor_speed_cps[i]
+            * MOTOR_WHEEL_CIRCUMFERENCE_M
+            / MOTOR_ENCODER_CPR;
+
+        debug_motor_speed_mps[i] = motor_speed_mps[i];
+    }
 
     /* 保存调试观察数据 */
 debug_motor_count[0] = motor_count[0];
@@ -481,10 +561,6 @@ debug_motor_target[3] = motor_target[3];
      * 为下一个100ms重新计数
      * ========================== */
 
-    __HAL_TIM_SET_COUNTER(&htim2, 0);
-    __HAL_TIM_SET_COUNTER(&htim3, 0);
-    __HAL_TIM_SET_COUNTER(&htim4, 0);
-    __HAL_TIM_SET_COUNTER(&htim1, 0);
 
 
     /* ==========================
@@ -593,6 +669,16 @@ int16_t Motor_GetCount(uint8_t motor)
     }
 
     return motor_count[motor - 1];
+}
+
+float Motor_GetSpeedMps(uint8_t motor)
+{
+    if (motor < 1 || motor > 4)
+    {
+        return 0.0f;
+    }
+
+    return motor_speed_mps[motor - 1];
 }
 
 uint16_t Motor_GetPWM(uint8_t motor)
